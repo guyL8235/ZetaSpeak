@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Voice Math Trainer</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+    
+    // Lucide icons
+    const Play = () => React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: 24, height: 24, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" },
+      React.createElement('polygon', { points: "5 3 19 12 5 21 5 3" })
+    );
+    
+    const Pause = () => React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: 24, height: 24, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" },
+      React.createElement('rect', { x: 6, y: 4, width: 4, height: 16 }),
+      React.createElement('rect', { x: 14, y: 4, width: 4, height: 16 })
+    );
+    
+    const Settings = () => React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: 20, height: 20, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" },
+      React.createElement('circle', { cx: 12, cy: 12, r: 3 }),
+      React.createElement('path', { d: "M12 1v6m0 6v6m-9-9h6m6 0h6m-3.5-5.5l-4.5 4.5m0 6l4.5 4.5m-9-9l4.5 4.5m0-6l-4.5-4.5" })
+    );
+    
+    const Mic = ({ size = 20, className = "" }) => React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", className },
+      React.createElement('path', { d: "M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" }),
+      React.createElement('path', { d: "M19 10v2a7 7 0 0 1-14 0v-2" }),
+      React.createElement('line', { x1: 12, x2: 12, y1: 19, y2: 22 })
+    );
+
+    function VoiceMathTrainer() {
+      const [isActive, setIsActive] = useState(false);
+      const [isListening, setIsListening] = useState(false);
+      const [currentProblem, setCurrentProblem] = useState(null);
+      const [score, setScore] = useState(0);
+      const [total, setTotal] = useState(0);
+      const [transcript, setTranscript] = useState('');
+      const [feedback, setFeedback] = useState('');
+      const [settings, setSettings] = useState({
+        minNum: 1,
+        maxNum: 100,
+        operations: ['+', '-', '×', '÷']
+      });
+      const [showSettings, setShowSettings] = useState(false);
+      
+      const recognitionRef = useRef(null);
+      const synthRef = useRef(window.speechSynthesis);
+      const audioContextRef = useRef(null);
+
+      useEffect(() => {
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+          const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+          recognitionRef.current = new SpeechRecognition();
+          recognitionRef.current.continuous = true;
+          recognitionRef.current.interimResults = true;
+          recognitionRef.current.lang = 'en-US';
+
+          recognitionRef.current.onresult = (event) => {
+            const last = event.results.length - 1;
+            const text = event.results[last][0].transcript.trim();
+            setTranscript(text);
+            
+            if (event.results[last].isFinal) {
+              checkAnswer(text);
+            }
+          };
+
+          recognitionRef.current.onerror = (event) => {
+            console.error('Speech recognition error:', event.error);
+            if (event.error === 'no-speech') {
+              setFeedback('No speech detected. Try again.');
+            }
+          };
+
+          recognitionRef.current.onend = () => {
+            if (isActive && isListening) {
+              recognitionRef.current.start();
+            }
+          };
+        }
+
+        audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+
+        return () => {
+          if (recognitionRef.current) {
+            recognitionRef.current.stop();
+          }
+        };
+      }, []);
+
+      const generateProblem = () => {
+        const { minNum, maxNum, operations } = settings;
+        const op = operations[Math.floor(Math.random() * operations.length)];
+        let num1 = Math.floor(Math.random() * (maxNum - minNum + 1)) + minNum;
+        let num2 = Math.floor(Math.random() * (maxNum - minNum + 1)) + minNum;
+        
+        if (op === '÷') {
+          num2 = Math.floor(Math.random() * (maxNum - minNum + 1)) + minNum;
+          num1 = num2 * (Math.floor(Math.random() * 10) + 1);
+        }
+        
+        if (op === '-' && num2 > num1) {
+          [num1, num2] = [num2, num1];
+        }
+        
+        let answer;
+        switch(op) {
+          case '+': answer = num1 + num2; break;
+          case '-': answer = num1 - num2; break;
+          case '×': answer = num1 * num2; break;
+          case '÷': answer = num1 / num2; break;
+        }
+        
+        return { num1, num2, op, answer };
+      };
+
+      const speak = (text) => {
+        return new Promise((resolve) => {
+          synthRef.current.cancel();
+          const utterance = new SpeechSynthesisUtterance(text);
+          utterance.rate = 1.0;
+          utterance.pitch = 1.0;
+          utterance.volume = 1.0;
+          utterance.onend = resolve;
+          synthRef.current.speak(utterance);
+        });
+      };
+
+      const playErrorBeep = () => {
+        const ctx = audioContextRef.current;
+        const oscillator = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        
+        oscillator.frequency.value = 300;
+        oscillator.type = 'sine';
+        
+        gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+        
+        oscillator.start(ctx.currentTime);
+        oscillator.stop(ctx.currentTime + 0.3);
+      };
+
+      const startNewProblem = async () => {
+        const problem = generateProblem();
+        setCurrentProblem(problem);
+        setTranscript('');
+        setFeedback('');
+        
+        let opWord = problem.op;
+        if (problem.op === '×') opWord = 'times';
+        if (problem.op === '÷') opWord = 'divided by';
+        if (problem.op === '+') opWord = 'plus';
+        if (problem.op === '-') opWord = 'minus';
+        
+        await speak(`${problem.num1} ${opWord} ${problem.num2}`);
+        
+        if (!isListening) {
+          setIsListening(true);
+          try {
+            await recognitionRef.current.start();
+          } catch (e) {
+            console.error('Recognition start error:', e);
+          }
+        }
+      };
+
+      const checkAnswer = (text) => {
+        const userAnswer = parseInt(text);
+        
+        if (isNaN(userAnswer)) {
+          setFeedback('Please say a number');
+          playErrorBeep();
+          return;
+        }
+        
+        if (userAnswer === currentProblem.answer) {
+          setScore(score + 1);
+          setTotal(total + 1);
+          setFeedback('✓ Correct!');
+          setTimeout(() => {
+            startNewProblem();
+          }, 800);
+        } else {
+          setTotal(total + 1);
+          setFeedback('✗ Try again');
+          playErrorBeep();
+          setTranscript('');
+        }
+      };
+
+      const toggleTraining = async () => {
+        if (!isActive) {
+          setIsActive(true);
+          setScore(0);
+          setTotal(0);
+          await startNewProblem();
+        } else {
+          setIsActive(false);
+          setIsListening(false);
+          if (recognitionRef.current) {
+            recognitionRef.current.stop();
+          }
+          synthRef.current.cancel();
+          setCurrentProblem(null);
+          setTranscript('');
+          setFeedback('');
+        }
+      };
+
+      const toggleOperation = (op) => {
+        const newOps = settings.operations.includes(op)
+          ? settings.operations.filter(o => o !== op)
+          : [...settings.operations, op];
+        
+        if (newOps.length > 0) {
+          setSettings({ ...settings, operations: newOps });
+        }
+      };
+
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6 flex items-center justify-center">
+          <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8">
+            <div className="text-center mb-8">
+              <h1 className="text-3xl font-bold text-gray-800 mb-2">Voice Math Trainer</h1>
+              <p className="text-gray-600">Practice mental math hands-free</p>
+            </div>
+
+            {!showSettings ? (
+              <>
+                <div className="mb-8 text-center">
+                  <div className="text-6xl font-bold text-indigo-600 mb-4">
+                    {currentProblem ? `${currentProblem.num1} ${currentProblem.op} ${currentProblem.num2}` : '—'}
+                  </div>
+                  
+                  {transcript && (
+                    <div className="text-2xl text-gray-700 mb-2">
+                      Your answer: {transcript}
+                    </div>
+                  )}
+                  
+                  {feedback && (
+                    <div className={`text-xl font-semibold ${feedback.includes('✓') ? 'text-green-600' : 'text-red-600'}`}>
+                      {feedback}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex justify-center mb-8">
+                  <div className="bg-gray-100 rounded-lg px-6 py-3 flex items-center gap-4">
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-gray-800">{score}</div>
+                      <div className="text-xs text-gray-600">Correct</div>
+                    </div>
+                    <div className="text-gray-400">/</div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-gray-800">{total}</div>
+                      <div className="text-xs text-gray-600">Total</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-4">
+                  <button
+                    onClick={toggleTraining}
+                    className={`w-full py-4 rounded-xl font-semibold text-white flex items-center justify-center gap-3 transition-all ${
+                      isActive 
+                        ? 'bg-red-500 hover:bg-red-600' 
+                        : 'bg-indigo-600 hover:bg-indigo-700'
+                    }`}
+                  >
+                    {isActive ? (
+                      <>
+                        <Pause />
+                        Stop Training
+                      </>
+                    ) : (
+                      <>
+                        <Play />
+                        Start Training
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    onClick={() => setShowSettings(true)}
+                    className="w-full py-3 rounded-xl font-semibold text-indigo-600 border-2 border-indigo-600 hover:bg-indigo-50 flex items-center justify-center gap-2 transition-all"
+                  >
+                    <Settings />
+                    Settings
+                  </button>
+                </div>
+
+                {isListening && (
+                  <div className="mt-6 flex items-center justify-center gap-2 text-green-600">
+                    <Mic size={20} className="animate-pulse" />
+                    <span className="text-sm font-medium">Listening...</span>
+                  </div>
+                )}
+
+                <div className="mt-8 p-4 bg-blue-50 rounded-lg">
+                  <h3 className="font-semibold text-gray-800 mb-2">How to use:</h3>
+                  <ul className="text-sm text-gray-600 space-y-1">
+                    <li>• Press Start and the app will speak problems</li>
+                    <li>• Say your answer out loud</li>
+                    <li>• Correct answers move to next problem</li>
+                    <li>• Wrong answers play a beep to try again</li>
+                  </ul>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="mb-6">
+                  <h2 className="text-xl font-bold text-gray-800 mb-4">Settings</h2>
+                  
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Number Range
+                    </label>
+                    <div className="flex gap-4">
+                      <div className="flex-1">
+                        <label className="text-xs text-gray-600">Min</label>
+                        <input
+                          type="number"
+                          value={settings.minNum}
+                          onChange={(e) => setSettings({ ...settings, minNum: parseInt(e.target.value) || 1 })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <label className="text-xs text-gray-600">Max</label>
+                        <input
+                          type="number"
+                          value={settings.maxNum}
+                          onChange={(e) => setSettings({ ...settings, maxNum: parseInt(e.target.value) || 100 })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Operations
+                    </label>
+                    <div className="grid grid-cols-2 gap-3">
+                      {['+', '-', '×', '÷'].map(op => (
+                        <button
+                          key={op}
+                          onClick={() => toggleOperation(op)}
+                          className={`py-3 px-4 rounded-lg font-semibold text-lg transition-all ${
+                            settings.operations.includes(op)
+                              ? 'bg-indigo-600 text-white'
+                              : 'bg-gray-200 text-gray-600'
+                          }`}
+                        >
+                          {op}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setShowSettings(false)}
+                  className="w-full py-3 rounded-xl font-semibold text-white bg-indigo-600 hover:bg-indigo-700"
+                >
+                  Done
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.render(<VoiceMathTrainer />, document.getElementById('root'));
+  </script>
+</body>
+</html>
