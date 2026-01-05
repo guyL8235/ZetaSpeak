@@ -8,7 +8,6 @@
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 <body>
   <div id="root"></div>
@@ -54,47 +53,12 @@
       const recognitionRef = useRef(null);
       const synthRef = useRef(window.speechSynthesis);
       const audioContextRef = useRef(null);
+      const currentProblemRef = useRef(null);
 
+      // Keep currentProblemRef in sync with currentProblem
       useEffect(() => {
-        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-          const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-          recognitionRef.current = new SpeechRecognition();
-          recognitionRef.current.continuous = true;
-          recognitionRef.current.interimResults = true;
-          recognitionRef.current.lang = 'en-US';
-
-          recognitionRef.current.onresult = (event) => {
-            const last = event.results.length - 1;
-            const text = event.results[last][0].transcript.trim();
-            setTranscript(text);
-            
-            if (event.results[last].isFinal) {
-              checkAnswer(text);
-            }
-          };
-
-          recognitionRef.current.onerror = (event) => {
-            console.error('Speech recognition error:', event.error);
-            if (event.error === 'no-speech') {
-              setFeedback('No speech detected. Try again.');
-            }
-          };
-
-          recognitionRef.current.onend = () => {
-            if (isActive && isListening) {
-              recognitionRef.current.start();
-            }
-          };
-        }
-
-        audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
-
-        return () => {
-          if (recognitionRef.current) {
-            recognitionRef.current.stop();
-          }
-        };
-      }, []);
+        currentProblemRef.current = currentProblem;
+      }, [currentProblem]);
 
       const generateProblem = () => {
         const { minNum, maxNum, operations } = settings;
@@ -165,47 +129,103 @@
         if (problem.op === '-') opWord = 'minus';
         
         await speak(`${problem.num1} ${opWord} ${problem.num2}`);
-        
-        if (!isListening) {
-          setIsListening(true);
-          try {
-            await recognitionRef.current.start();
-          } catch (e) {
-            console.error('Recognition start error:', e);
-          }
-        }
       };
 
-      const checkAnswer = (text) => {
-        const userAnswer = parseInt(text);
-        
-        if (isNaN(userAnswer)) {
-          setFeedback('Please say a number');
-          playErrorBeep();
-          return;
+      useEffect(() => {
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+          const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+          recognitionRef.current = new SpeechRecognition();
+          recognitionRef.current.continuous = true;
+          recognitionRef.current.interimResults = true;
+          recognitionRef.current.lang = 'en-US';
+
+          recognitionRef.current.onresult = (event) => {
+            const last = event.results.length - 1;
+            const text = event.results[last][0].transcript.trim();
+            setTranscript(text);
+            
+            if (event.results[last].isFinal) {
+              const userAnswer = parseInt(text);
+              const problem = currentProblemRef.current;
+              
+              if (!problem) {
+                console.log('No current problem');
+                return;
+              }
+              
+              if (isNaN(userAnswer)) {
+                setFeedback('Please say a number');
+                playErrorBeep();
+                setTranscript('');
+                return;
+              }
+              
+              if (userAnswer === problem.answer) {
+                setScore(s => s + 1);
+                setTotal(t => t + 1);
+                setFeedback('✓ Correct!');
+                setTimeout(async () => {
+                  const newProblem = generateProblem();
+                  setCurrentProblem(newProblem);
+                  setTranscript('');
+                  setFeedback('');
+                  
+                  let opWord = newProblem.op;
+                  if (newProblem.op === '×') opWord = 'times';
+                  if (newProblem.op === '÷') opWord = 'divided by';
+                  if (newProblem.op === '+') opWord = 'plus';
+                  if (newProblem.op === '-') opWord = 'minus';
+                  
+                  await speak(`${newProblem.num1} ${opWord} ${newProblem.num2}`);
+                }, 800);
+              } else {
+                setTotal(t => t + 1);
+                setFeedback('✗ Try again');
+                playErrorBeep();
+                setTranscript('');
+              }
+            }
+          };
+
+          recognitionRef.current.onerror = (event) => {
+            console.error('Speech recognition error:', event.error);
+            if (event.error === 'no-speech') {
+              setFeedback('No speech detected. Try again.');
+            }
+          };
+
+          recognitionRef.current.onend = () => {
+            if (isActive && isListening) {
+              try {
+                recognitionRef.current.start();
+              } catch (e) {
+                console.error('Restart error:', e);
+              }
+            }
+          };
         }
-        
-        if (userAnswer === currentProblem.answer) {
-          setScore(score + 1);
-          setTotal(total + 1);
-          setFeedback('✓ Correct!');
-          setTimeout(() => {
-            startNewProblem();
-          }, 800);
-        } else {
-          setTotal(total + 1);
-          setFeedback('✗ Try again');
-          playErrorBeep();
-          setTranscript('');
-        }
-      };
+
+        audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+
+        return () => {
+          if (recognitionRef.current) {
+            recognitionRef.current.stop();
+          }
+        };
+      }, [isActive, isListening]);
 
       const toggleTraining = async () => {
         if (!isActive) {
           setIsActive(true);
           setScore(0);
           setTotal(0);
+          setIsListening(true);
           await startNewProblem();
+          try {
+            await recognitionRef.current.start();
+          } catch (e) {
+            console.error('Recognition start error:', e);
+          }
         } else {
           setIsActive(false);
           setIsListening(false);
