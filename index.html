@@ -35,6 +35,52 @@
       React.createElement('line', { x1: 12, x2: 12, y1: 19, y2: 22 })
     );
 
+    // Word to number converter (defined once, used everywhere)
+    const wordToNumber = (word) => {
+      const words = {
+        'zero': 0, 'one': 1, 'two': 2, 'three': 3, 'four': 4,
+        'five': 5, 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9,
+        'ten': 10, 'eleven': 11, 'twelve': 12, 'thirteen': 13, 'fourteen': 14,
+        'fifteen': 15, 'sixteen': 16, 'seventeen': 17, 'eighteen': 18, 'nineteen': 19,
+        'twenty': 20, 'thirty': 30, 'forty': 40, 'fifty': 50,
+        'sixty': 60, 'seventy': 70, 'eighty': 80, 'ninety': 90,
+        'hundred': 100, 'thousand': 1000
+      };
+      
+      const lowerText = word.toLowerCase().trim();
+      
+      // Try direct conversion
+      if (words[lowerText] !== undefined) {
+        return words[lowerText];
+      }
+      
+      // Try parsing as number
+      const num = parseInt(lowerText);
+      if (!isNaN(num)) {
+        return num;
+      }
+      
+      // Handle compound numbers like "twenty three" or "twenty-three"
+      const parts = lowerText.replace(/-/g, ' ').split(' ');
+      let result = 0;
+      let current = 0;
+      
+      for (let part of parts) {
+        const val = words[part];
+        if (val !== undefined) {
+          if (val >= 100) {
+            current *= val;
+            result += current;
+            current = 0;
+          } else {
+            current += val;
+          }
+        }
+      }
+      
+      return result + current;
+    };
+
     function VoiceMathTrainer() {
       const [isActive, setIsActive] = useState(false);
       const [isListening, setIsListening] = useState(false);
@@ -142,56 +188,13 @@
           recognitionRef.current.onresult = (event) => {
             const last = event.results.length - 1;
             const text = event.results[last][0].transcript.trim();
-            setTranscript(text);
+            
+            // Convert to number for display
+            const numericValue = wordToNumber(text);
+            setTranscript(isNaN(numericValue) ? text : numericValue);
             
             if (event.results[last].isFinal) {
-              // Convert word numbers to digits
-              const wordToNumber = (word) => {
-                const words = {
-                  'zero': 0, 'one': 1, 'two': 2, 'three': 3, 'four': 4,
-                  'five': 5, 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9,
-                  'ten': 10, 'eleven': 11, 'twelve': 12, 'thirteen': 13, 'fourteen': 14,
-                  'fifteen': 15, 'sixteen': 16, 'seventeen': 17, 'eighteen': 18, 'nineteen': 19,
-                  'twenty': 20, 'thirty': 30, 'forty': 40, 'fifty': 50,
-                  'sixty': 60, 'seventy': 70, 'eighty': 80, 'ninety': 90,
-                  'hundred': 100, 'thousand': 1000
-                };
-                
-                const lowerText = word.toLowerCase().trim();
-                
-                // Try direct conversion
-                if (words[lowerText] !== undefined) {
-                  return words[lowerText];
-                }
-                
-                // Try parsing as number
-                const num = parseInt(lowerText);
-                if (!isNaN(num)) {
-                  return num;
-                }
-                
-                // Handle compound numbers like "twenty three" or "twenty-three"
-                const parts = lowerText.replace(/-/g, ' ').split(' ');
-                let result = 0;
-                let current = 0;
-                
-                for (let part of parts) {
-                  const val = words[part];
-                  if (val !== undefined) {
-                    if (val >= 100) {
-                      current *= val;
-                      result += current;
-                      current = 0;
-                    } else {
-                      current += val;
-                    }
-                  }
-                }
-                
-                return result + current;
-              };
-              
-              const userAnswer = wordToNumber(text);
+              const userAnswer = numericValue;
               const problem = currentProblemRef.current;
               
               if (!problem) {
